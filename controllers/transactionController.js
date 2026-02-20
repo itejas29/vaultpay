@@ -1,0 +1,109 @@
+const mongoose = require("mongoose")
+const Wallet = require("../models/Wallet")
+const Transaction = require("../models/Transaction")
+const User = require("../models/User")
+
+exports.getAllTransactions = async (req, res) => {
+  try {
+    const tx = await Transaction.find()
+      .sort({ createdAt: -1 })
+      .limit(100)
+
+    res.json(tx)
+  } catch (err) {
+    res.status(500).json({ msg: err.message })
+  }
+}
+exports.history = async (req, res) => {
+  try {
+    const tx = await Transaction.find({
+      $or: [
+        { sender: req.user.id },
+        { receiver: req.user.id }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .limit(20)
+
+    res.json(tx)
+  } catch (err) {
+    res.status(500).json({ msg: err.message })
+  }
+}
+
+exports.transfer = async (req, res) => {
+  const session = await mongoose.startSession()
+  session.startTransaction()
+
+  try {
+    const { receiverId, amount } = req.body
+
+    const numericAmount = Number(amount)
+
+    if (!numericAmount || numericAmount <= 0) {
+      await session.abortTransaction()
+      session.endSession()
+      return res.status(400).json({ msg: "Invalid amount" })
+    }
+
+    const senderUser = await User.findById(req.user.id).session(session)
+
+    if (!senderUser) {
+      await session.abortTransaction()
+      session.endSession()
+      return res.status(400).json({ msg: "Sender not found" })
+    }
+
+    if (senderUser.isBlocked) {
+      await session.abortTransaction()
+      session.endSession()
+      return res.status(403).json({ msg: "Account is frozen" })
+    }
+
+    const senderWallet = await Wallet.findOne({ user: req.user.id }).session(session)
+    const receiverWallet = await Wallet.findOne({ user: receiverId }).session(session)
+
+    if (!senderWallet || !receiverWallet) {
+      await session.abortTransaction()
+      session.endSession()
+      return res.status(400).json({ msg: "Wallet not found" })
+    }
+
+    if (senderWallet.balance < numericAmount) {
+      await session.abortTransaction()
+      session.endSession()
+      return res.status(400).json({ msg: "Insufficient funds" })
+    }
+
+    senderWallet.balance -= numericAmount
+    receiverWallet.balance += numericAmount
+
+    await senderWallet.save({ session })
+    await receiverWallet.save({ session })
+
+    const flagged = numericAmount > 50000
+
+    await Transaction.create([{
+      sender: req.user.id,
+      receiver: receiverId,
+      amount: numericAmount,
+      flagged
+    }], { session })
+
+    await session.commitTransaction()
+    session.endSession()
+
+    res.json({
+      msg: "Transfer successful",
+      flagged
+    })
+
+  } catch (err) {
+    console.error("TRANSFER ERROR:", err)   // 👈 VERY IMPORTANT
+
+    await session.abortTransaction()
+    session.endSession()
+
+    res.status(500).json({ msg: err.message })
+  }
+}
