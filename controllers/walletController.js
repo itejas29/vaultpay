@@ -1,8 +1,17 @@
 const Wallet = require("../models/Wallet")
 
 exports.getBalance = async (req, res) => {
-  const wallet = await Wallet.findOne({ user: req.user.id })
-  res.json({ balance: wallet.balance })
+  try {
+    const wallet = await Wallet.findOne({ user: req.user.id })
+
+    if (!wallet) {
+      return res.json({ balance: 0 })
+    }
+
+    res.json({ balance: wallet.balance })
+  } catch (err) {
+    res.status(500).json({ msg: err.message })
+  }
 }
 
 exports.addMoney = async (req, res) => {

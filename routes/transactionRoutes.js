@@ -2,16 +2,19 @@ const router = require("express").Router()
 const auth = require("../middleware/auth")
 const role = require("../middleware/role")
 
-const {
-  transfer,
-  history,
-  getAllTransactions
-} = require("../controllers/transactionController")
+const transactionController = require("../controllers/transactionController")
 
-router.post("/transfer", auth, transfer)
+router.post("/transfer", auth, transactionController.transfer)
 
-router.get("/history", auth, history)
+router.post("/preview", auth, transactionController.previewReceiver)
 
-router.get("/all", auth, role("admin"), getAllTransactions)
+router.get("/history", auth, transactionController.history)
+
+router.get(
+  "/all",
+  auth,
+  role("admin"),
+  transactionController.getAllTransactions
+)
 
 module.exports = router
